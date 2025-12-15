@@ -1,0 +1,59 @@
+
+services:
+  # Database (PostgreSQL)
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: videorepurposing
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # Redis (Message Broker)
+  redis:
+    image: redis:alpine
+    restart: always
+    ports:
+      - "6379:6379"
+
+  # Backend API
+  backend:
+    build: .
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/videorepurposing
+      REDIS_URL: redis://redis:6379/0
+      # OPENAI_API_KEY should be set in the environment where docker-compose is run
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      USE_MOCK_AI: ${USE_MOCK_AI:-False}
+    depends_on:
+      - db
+      - redis
+
+  # Celery Worker
+  worker:
+    build: .
+    restart: always
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://user:password@db:5432/videorepurposing
+      REDIS_URL: redis://redis:6379/0
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      USE_MOCK_AI: ${USE_MOCK_AI:-False}
+    depends_on:
+      - backend
+      - redis
+      - db
+
+volumes:
+  postgres_data:

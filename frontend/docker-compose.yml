@@ -1,0 +1,12 @@
+
+services:
+  # Frontend (Next.js)
+  frontend:
+    build: .
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    # Note: 'backend' service dependency is across files, simplified here without explicit depends_on
+    # or rely on root compose network to allow connectivity.

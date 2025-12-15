@@ -1,0 +1,106 @@
+from uuid import UUID
+import asyncio
+from sqlalchemy import select
+from app.core.database import AsyncSessionLocal
+from app.models.content import Transcript, ContentAtom, Post
+from app.services.ai_service import AIService
+from app.services.youtube import YouTubeService
+
+async def process_content(transcript_id: UUID):
+    """
+    Process transcript to extract content atoms.
+    """
+    print(f"Starting processing for transcript: {transcript_id}")
+    
+    async with AsyncSessionLocal() as db:
+        try:
+            # 1. Fetch Transcript
+            result = await db.execute(select(Transcript).where(Transcript.id == transcript_id))
+            transcript = result.scalars().first()
+            
+            if not transcript:
+                print(f"Transcript {transcript_id} not found.")
+                return
+
+            # Update Status: Processing
+            transcript.status = "processing"
+            db.add(transcript)
+            await db.commit()
+            
+            # Fetch real transcript from YouTube
+            try:
+                print(f"Fetching transcript for URL: {transcript.youtube_url}")
+                raw_text = YouTubeService.get_transcript(transcript.youtube_url)
+                transcript.raw_text = raw_text
+                db.add(transcript)
+                await db.commit()
+            except Exception as e:
+                print(f"Failed to fetch YouTube transcript: {e}")
+                transcript.status = "failed"
+                transcript.error_message = f"Failed to fetch transcript: {str(e)}"
+                db.add(transcript)
+                await db.commit()
+                return
+
+            # 2. Call AI Service
+            ai_service = AIService()
+            atoms_data = await ai_service.extract_content_atoms(transcript.raw_text)
+            
+            if not atoms_data:
+                print("No atoms extracted.")
+                transcript.status = "failed"
+                transcript.error_message = "No content atoms extracted from AI response."
+                db.add(transcript)
+                await db.commit()
+                return
+
+            # 3. Save to DB
+            for atom in atoms_data:
+                # Create Atom
+                content_atom = ContentAtom(
+                    transcript_id=transcript.id,
+                    type=atom.get("type", "insight"),
+                    text=atom.get("text", "")
+                )
+                db.add(content_atom)
+                await db.flush() 
+                
+                # REWRITING
+                platforms = ["twitter", "linkedin"]
+                for platform in platforms:
+                    rewritten_text = await ai_service.rewrite_content(content_atom.text, platform)
+                    
+                    post = Post(
+                        content_atom_id=content_atom.id,
+                        platform=platform,
+                        text=rewritten_text,
+                        included=True
+                    )
+                    db.add(post)
+            
+            # Update Status: Completed
+            transcript.status = "completed"
+            db.add(transcript)
+            await db.commit()
+            print(f"Successfully saved {len(atoms_data)} atoms for transcript {transcript_id}")
+
+        except Exception as e:
+            print(f"Error processing content: {e}")
+            await db.rollback()
+            # Try to update status to failed in a separate transaction if possible, 
+            # or just log it. Since we rolled back, the 'processing' status might remain 
+            # if that commit succeeded, which is fine for now.
+            try:
+                # Re-fetch because of rollback detaching objects
+                async with AsyncSessionLocal() as db_err:
+                    err_result = await db_err.execute(select(Transcript).where(Transcript.id == transcript_id))
+                    err_transcript = err_result.scalars().first()
+                    if err_transcript:
+                        err_transcript.status = "failed"
+                        err_transcript.error_message = str(e)
+                        db_err.add(err_transcript)
+                        await db_err.commit()
+            except Exception as e2:
+                print(f"Failed to update error status: {e2}")
+            raise e # Re-raise for Celery retry
+
