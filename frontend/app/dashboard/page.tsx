@@ -52,13 +52,14 @@ export default function DashboardPage() {
             });
             console.log("Job Created:", result);
             router.push(`/review?id=${result.id}`);
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const err = error as { error?: string };
             console.error("API Error:", error);
             let message = "Failed to create content job. Please try again.";
 
-            if (error?.error === "TRANSCRIPT_NOT_AVAILABLE") {
+            if (err?.error === "TRANSCRIPT_NOT_AVAILABLE") {
                 message = "This video does not have captions enabled.";
-            } else if (error?.error === "TRANSCRIPT_ACCESS_DENIED") {
+            } else if (err?.error === "TRANSCRIPT_ACCESS_DENIED") {
                 message = "This video cannot be processed due to access restrictions.";
             }
 

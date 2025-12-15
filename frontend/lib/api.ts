@@ -13,7 +13,7 @@ export const api = {
             let errorData;
             try {
                 errorData = await response.json();
-            } catch (e) {
+            } catch {
                 // If JSON parse fails, fall back to status text
             }
             throw errorData || new Error("Failed to create content job");
