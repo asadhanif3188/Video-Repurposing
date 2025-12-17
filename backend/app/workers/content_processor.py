@@ -4,7 +4,8 @@ from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.models.content import Transcript, ContentAtom, Post
 from app.services.ai_service import AIService
-from app.services.youtube import YouTubeService
+from app.services.ai_service import AIService
+from app.services.transcript_service import TranscriptService
 
 async def process_content(transcript_id: UUID):
     """
@@ -27,20 +28,22 @@ async def process_content(transcript_id: UUID):
             db.add(transcript)
             await db.commit()
             
-            # Fetch real transcript from YouTube
-            try:
-                print(f"Fetching transcript for URL: {transcript.youtube_url}")
-                raw_text = YouTubeService.get_transcript(transcript.youtube_url)
-                transcript.raw_text = raw_text
-                db.add(transcript)
-                await db.commit()
-            except Exception as e:
-                print(f"Failed to fetch YouTube transcript: {e}")
-                transcript.status = "failed"
-                transcript.error_message = f"Failed to fetch transcript: {str(e)}"
-                db.add(transcript)
-                await db.commit()
-                return
+            # Ensure we have text
+            if not transcript.raw_text:
+                try:
+                    print(f"Transcript text missing in DB. Fetching for URL: {transcript.youtube_url}")
+                    # Use robust TranscriptService instead of fragile YouTubeService
+                    ts = TranscriptService()
+                    transcript.raw_text = ts.get_transcript(transcript.youtube_url)
+                    db.add(transcript)
+                    await db.commit()
+                except Exception as e:
+                    print(f"Failed to fetch transcript (fallback): {e}")
+                    transcript.status = "failed"
+                    transcript.error_message = f"Failed to fetch transcript: {str(e)}"
+                    db.add(transcript)
+                    await db.commit()
+                    return
 
             # 2. Call AI Service
             ai_service = AIService()
