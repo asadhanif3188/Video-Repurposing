@@ -16,6 +16,18 @@ class MockProvider(AIProvider):
             {"type": "opinion", "text": "This is a mock opinion about the subject matter."}
         ]
 
+    async def extract_atoms_from_metadata(self, metadata: Dict[str, str]) -> List[Dict[str, str]]:
+        """
+        Return static mock data for metadata extraction.
+        """
+        print(f"⚠️ Using MOCK AI for metadata extraction: {metadata.get('title')}")
+        await asyncio.sleep(1)
+        return [
+            {"type": "insight", "text": f"Mock insight derived from title: {metadata.get('title')}"},
+            {"type": "quote", "text": "Mock quote inferred from description."},
+            {"type": "lesson", "text": "Always optimize your video metadata."},
+        ]
+
     async def rewrite_for_platform(self, text: str, platform: str) -> str:
         """
         Return simple mock rewritten text.

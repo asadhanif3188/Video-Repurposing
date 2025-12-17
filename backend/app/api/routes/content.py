@@ -31,9 +31,21 @@ async def create_content(
     
     # This will raise TranscriptNotAvailableError/TranscriptAccessDeniedError if failed
     # Caught by global exception handlers in main.py
-    raw_transcript_text = transcript_service.get_transcript(str(request.url))
+    result = transcript_service.get_transcript(str(request.url))
     
-    # Check if processing (Whisper fallback triggered)
+    # Analyze result mode
+    raw_transcript_text = ""
+    source_type = "transcript"
+    
+    if isinstance(result, dict) and result.get("mode") == "metadata":
+        source_type = "metadata"
+        raw_transcript_text = "METADATA_FALLBACK"
+    elif isinstance(result, str):
+        raw_transcript_text = result
+        if result == "TRANSCRIPT_PROCESSING":
+            pass # Keep default source_type="transcript"
+    
+    # Check if processing (Whisper fallback triggered - legacy check)
     is_processing = (raw_transcript_text == "TRANSCRIPT_PROCESSING")
     initial_status = "processing" if is_processing else "queued"
     initial_text = "" if is_processing else raw_transcript_text
@@ -54,7 +66,8 @@ async def create_content(
         user_id=user.id,
         youtube_url=str(request.url),
         raw_text=initial_text, 
-        status=initial_status
+        status=initial_status,
+        source_type=source_type
     )
     db.add(transcript)
     await db.commit()
@@ -84,7 +97,8 @@ async def create_content(
         id=transcript.id,
         status=initial_status,
         message=response_msg,
-        post_count=0
+        post_count=0,
+        content_source=source_type
     )
 
 @router.get("/status/{transcript_id}", response_model=ContentStatusResponse)

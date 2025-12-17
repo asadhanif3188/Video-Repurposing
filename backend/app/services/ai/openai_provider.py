@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 from openai import AsyncOpenAI
 from app.core.config import settings
 from app.services.ai.base import AIProvider
-from app.services.ai.prompts import EXTRACT_ATOMS_PROMPT, REWRITE_CONTENT_PROMPT
+from app.services.ai.prompts import EXTRACT_ATOMS_PROMPT, REWRITE_CONTENT_PROMPT, REPURPOSE_METADATA_PROMPT
 
 class OpenAIProvider(AIProvider):
     def __init__(self):
@@ -36,6 +36,37 @@ class OpenAIProvider(AIProvider):
             
         except Exception as e:
             print(f"Error extracting atoms from OpenAI: {e}")
+            raise e
+
+    async def extract_atoms_from_metadata(self, metadata: Dict[str, str]) -> List[Dict[str, str]]:
+        """
+        Extract atoms from metadata using OpenAI.
+        """
+        prompt = REPURPOSE_METADATA_PROMPT.format(
+            title=metadata.get("title", ""),
+            channel=metadata.get("channel_name", ""),
+            description=metadata.get("description", "")
+        )
+
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-3.5-turbo-1106",
+                messages=[
+                    {"role": "system", "content": "You are an expert content strategist."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"}
+            )
+            
+            content = response.choices[0].message.content
+            if not content:
+                return []
+                
+            data = json.loads(content)
+            return data.get("atoms", [])
+            
+        except Exception as e:
+            print(f"Error extracting atoms from metadata: {e}")
             raise e
 
     async def rewrite_for_platform(self, text: str, platform: str) -> str:

@@ -17,6 +17,7 @@ class Transcript(Base):
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String, default="queued", nullable=False)
     error_message: Mapped[str] = mapped_column(Text, nullable=True)
+    source_type: Mapped[str] = mapped_column(String, default="transcript", nullable=False)
 
 class ContentAtom(Base):
     __tablename__ = "content_atoms"

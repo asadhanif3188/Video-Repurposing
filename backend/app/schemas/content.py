@@ -14,6 +14,7 @@ class ContentStatusResponse(BaseModel):
     message: Optional[str] = None
     error: Optional[str] = None # For debugging
     post_count: int = 0
+    content_source: str = "transcript"
 
 class PostResponse(BaseModel):
     id: UUID

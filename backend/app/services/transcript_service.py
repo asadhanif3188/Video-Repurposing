@@ -41,9 +41,10 @@ class TranscriptService:
                 return match.group(1)
         return None
 
-    def get_transcript(self, video_url: str) -> str:
+    def get_transcript(self, video_url: str) -> str | dict:
         """
         Fetches the transcript for the given YouTube URL.
+        If transcript is unavailable, falls back to fetching metadata.
         """
         video_id = self.extract_video_id(video_url)
         if not video_id:
@@ -74,7 +75,6 @@ class TranscriptService:
                 raise TranscriptNotAvailableError(reason="language_not_supported")
                 
             # Fetch the content
-            # The fetch() method performs the actual parsing of the transcript XML/JSON
             transcript_data = transcript.fetch()
             
             if not transcript_data:
@@ -82,29 +82,27 @@ class TranscriptService:
             
             return " ".join([t['text'] for t in transcript_data])
 
-        except (TranscriptsDisabled, NoTranscriptFound) as e:
-            # Trigger Whisper Fallback
-            # Trigger Whisper Fallback by returning sentinel
-            print(f"Transcript unavailable via standard API ({e}). Returning processing status for fallback.")
-            return "TRANSCRIPT_PROCESSING"
+        except (TranscriptsDisabled, NoTranscriptFound, TranscriptNotAvailableError, Exception) as e:
+            # Check for Access Denied errors first (don't fallback for private videos)
+            if isinstance(e, (VideoUnavailable, AgeRestricted)):
+                 raise TranscriptAccessDeniedError(f"Video is inaccessible: {str(e)}")
+            
+            # Fallback to Metadata
+            # Note: "no element found" or "ExpatError" are generic libs errors for empty/bad XML, treat as fallback case
+            print(f"Transcript unavailable ({e}). Falling back to Metadata.")
+            
+            try:
+                from app.services.youtube_metadata_service import YouTubeMetadataService
+                meta_service = YouTubeMetadataService()
+                metadata = meta_service.fetch_metadata(video_url)
                 
-        except (VideoUnavailable, AgeRestricted) as e:
-            raise TranscriptAccessDeniedError(f"Video is inaccessible (private, age-restricted, or members-only). Alert: {str(e)}")
-        
-        except TranscriptNotAvailableError as e:
-             # Trigger Whisper Fallback for our own raised errors (e.g. language_not_supported)
-             # Trigger Whisper Fallback by returning sentinel
-            print(f"Transcript unavailable ({e}). Returning processing status for fallback.")
-            return "TRANSCRIPT_PROCESSING"
-                
-        except Exception as e:
-            # Handle generic exceptions including XML parsing errors from the library
-            # "no element found" or "ExpatError"
-            error_msg = str(e)
-            if "no element found" in error_msg:
-                 # Trigger fallback for empty response error too
-                 # Trigger fallback for empty response error too
-                 print("Transcript empty or XML error. Returning processing status for fallback.")
-                 return "TRANSCRIPT_PROCESSING"
-                 
-            raise e
+                return {
+                    "mode": "metadata",
+                    "data": metadata
+                }
+            except Exception as meta_e:
+                # If metadata also fails, then we truly fail
+                print(f"Metadata fallback failed: {meta_e}")
+                # Raise original error or new one? User said "Only raise error if Video is private..."
+                # But if metadata also fails, we have nothing.
+                raise TranscriptNotAvailableError(f"Transcript and Metadata both unavailable. Transcript error: {e}. Metadata error: {meta_e}")

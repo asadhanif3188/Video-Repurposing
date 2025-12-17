@@ -29,32 +29,50 @@ async def process_content(transcript_id: UUID):
             await db.commit()
             
             # Ensure we have text
+            # Ensure we have text or fall back to metadata
+            mode = "transcript"
+            metadata_payload = None
+
             if not transcript.raw_text:
                 try:
                     print(f"Transcript text missing in DB. Fetching for URL: {transcript.youtube_url}")
-                    # Use robust TranscriptService instead of fragile YouTubeService
                     ts = TranscriptService()
-                    text = ts.get_transcript(transcript.youtube_url)
+                    result = ts.get_transcript(transcript.youtube_url)
                     
-                    if text == "TRANSCRIPT_PROCESSING":
-                        print("Transcript requires processing (Whisper). Aborting this generation attempt.")
-                        # Do not update status to failed; let the Whisper task handle it.
-                        return
+                    if isinstance(result, dict) and result.get("mode") == "metadata":
+                        print("Transcript unavailable. Swapping to Metadata mode.")
+                        mode = "metadata"
+                        metadata_payload = result.get("data")
+                        transcript.raw_text = "METADATA_FALLBACK" # Placeholder value to satisfy not-null constraint
+                        transcript.source_type = "metadata"
+                        db.add(transcript)
+                        await db.commit()
+                    elif isinstance(result, str):
+                        transcript.raw_text = result
+                        transcript.source_type = "transcript"
+                        db.add(transcript)
+                        await db.commit()
+                    else:
+                        raise Exception("Unknown result from transcript service")
 
-                    transcript.raw_text = text
-                    db.add(transcript)
-                    await db.commit()
                 except Exception as e:
-                    print(f"Failed to fetch transcript (fallback): {e}")
+                    print(f"Failed to fetch transcript/metadata: {e}")
                     transcript.status = "failed"
-                    transcript.error_message = f"Failed to fetch transcript: {str(e)}"
+                    transcript.error_message = f"Failed to fetch content source: {str(e)}"
                     db.add(transcript)
                     await db.commit()
                     return
 
             # 2. Call AI Service
             ai_service = AIService()
-            atoms_data = await ai_service.extract_content_atoms(transcript.raw_text)
+            atoms_data = []
+            
+            if mode == "transcript":
+                atoms_data = await ai_service.extract_content_atoms(transcript.raw_text)
+            elif mode == "metadata":
+                from app.services.ai.metadata_pipeline import MetadataPipeline
+                pipeline = MetadataPipeline()
+                atoms_data = await pipeline.generate_content_from_metadata(metadata_payload)
             
             if not atoms_data:
                 print("No atoms extracted.")

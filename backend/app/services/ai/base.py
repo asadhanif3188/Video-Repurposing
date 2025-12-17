@@ -20,6 +20,19 @@ class AIProvider(ABC):
         pass
 
     @abstractmethod
+    async def extract_atoms_from_metadata(self, metadata: Dict[str, str]) -> Any:
+        """
+        Extract atoms based on video metadata (title, description).
+        
+        Args:
+            metadata (Dict): Contains 'title', 'description', 'channel'.
+            
+        Returns:
+            Any: The extracted atoms.
+        """
+        pass
+
+    @abstractmethod
     async def rewrite_for_platform(self, text: str, platform: str) -> str:
         """
         Rewrite the text for a specific social media platform.
