@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.schemas.content import CreateContentRequest, ContentStatusResponse
 from app.models.content import Transcript
 from app.models.user import User
-from app.workers.tasks import generate_content_task
+from app.workers.tasks import generate_content_task, transcribe_video_task
 
 router = APIRouter()
 
@@ -75,6 +75,10 @@ async def create_content(
     if not is_processing:
         # Standard flow: we have text, enqueue generation
         generate_content_task.delay(str(transcript.id))
+    else:
+        # Fallback flow: we have a processing status, so trigger the background transcription task
+        # which will then chain into content generation.
+        transcribe_video_task.delay(str(transcript.id))
 
     return ContentStatusResponse(
         id=transcript.id,

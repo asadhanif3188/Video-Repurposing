@@ -84,26 +84,18 @@ class TranscriptService:
 
         except (TranscriptsDisabled, NoTranscriptFound) as e:
             # Trigger Whisper Fallback
-            from app.workers.tasks import transcribe_video_task
-            try:
-                transcribe_video_task.delay(video_id)
-                return "TRANSCRIPT_PROCESSING"
-            except Exception as task_error:
-                print(f"Failed to enqueue Whisper task: {task_error}")
-                raise TranscriptNotAvailableError(f"Transcript unavailable and fallback failed: {str(e)}")
+            # Trigger Whisper Fallback by returning sentinel
+            print(f"Transcript unavailable via standard API ({e}). Returning processing status for fallback.")
+            return "TRANSCRIPT_PROCESSING"
                 
         except (VideoUnavailable, AgeRestricted) as e:
             raise TranscriptAccessDeniedError(f"Video is inaccessible (private, age-restricted, or members-only). Alert: {str(e)}")
         
         except TranscriptNotAvailableError as e:
              # Trigger Whisper Fallback for our own raised errors (e.g. language_not_supported)
-            from app.workers.tasks import transcribe_video_task
-            try:
-                transcribe_video_task.delay(video_id)
-                return "TRANSCRIPT_PROCESSING"
-            except Exception as task_error:
-                print(f"Failed to enqueue Whisper task: {task_error}")
-                raise e
+             # Trigger Whisper Fallback by returning sentinel
+            print(f"Transcript unavailable ({e}). Returning processing status for fallback.")
+            return "TRANSCRIPT_PROCESSING"
                 
         except Exception as e:
             # Handle generic exceptions including XML parsing errors from the library
@@ -111,8 +103,8 @@ class TranscriptService:
             error_msg = str(e)
             if "no element found" in error_msg:
                  # Trigger fallback for empty response error too
-                 from app.workers.tasks import transcribe_video_task
-                 transcribe_video_task.delay(video_id)
+                 # Trigger fallback for empty response error too
+                 print("Transcript empty or XML error. Returning processing status for fallback.")
                  return "TRANSCRIPT_PROCESSING"
                  
             raise e
