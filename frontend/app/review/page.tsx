@@ -25,6 +25,7 @@ function ReviewContent() {
     const [status, setStatus] = React.useState<string>("loading"); // loading, processing, ready, error
     const [loadingMessage, setLoadingMessage] = React.useState("Initializing...");
     const [publishing, setPublishing] = React.useState(false);
+    const [contentSource, setContentSource] = React.useState<string>("transcript");
 
     // Polling Logic
     React.useEffect(() => {
@@ -71,6 +72,9 @@ function ReviewContent() {
 
                 if (statusData.status === "completed") {
                     setLoadingMessage("Generating Schedule...");
+                    if (statusData.content_source) {
+                        setContentSource(statusData.content_source);
+                    }
                     await fetchSchedule();
                     return; // Stop polling
                 }
@@ -164,6 +168,11 @@ function ReviewContent() {
                 <p className="mt-2 text-zinc-600">
                     Review the generated schedule and publish.
                 </p>
+                {contentSource === "metadata" && (
+                    <div className="mt-4 rounded-md bg-blue-50 p-3 text-sm text-blue-700 border border-blue-100">
+                        <span className="font-semibold">Note:</span> We generated content based on your video’s topic and description because captions were unavailable.
+                    </div>
+                )}
             </div>
 
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
