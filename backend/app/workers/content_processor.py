@@ -34,7 +34,14 @@ async def process_content(transcript_id: UUID):
                     print(f"Transcript text missing in DB. Fetching for URL: {transcript.youtube_url}")
                     # Use robust TranscriptService instead of fragile YouTubeService
                     ts = TranscriptService()
-                    transcript.raw_text = ts.get_transcript(transcript.youtube_url)
+                    text = ts.get_transcript(transcript.youtube_url)
+                    
+                    if text == "TRANSCRIPT_PROCESSING":
+                        print("Transcript requires processing (Whisper). Aborting this generation attempt.")
+                        # Do not update status to failed; let the Whisper task handle it.
+                        return
+
+                    transcript.raw_text = text
                     db.add(transcript)
                     await db.commit()
                 except Exception as e:
